@@ -26,8 +26,11 @@ public class MyProcess implements Runnable{
     }
 
     /*
-        recieveMessage()
+        receiveMessage()
             ~runs the ring system and will send and receive messages
+            ~also checks for the leader announcement, declaring one self the leader
+            ~and simple forwarding of received message
+            ~runs in a loop until the leader message is received
     */
     public void receiveMessage(){
         try{
@@ -41,7 +44,7 @@ public class MyProcess implements Runnable{
                 objectInputStream = new ObjectInputStream(serverSoc.getInputStream());
                 this.lastSeenIP = this.serverSoc.getInetAddress().getHostAddress(); //keep track of the last connected ip
                 Message msg = (Message) objectInputStream.readObject(); //message received
-                outputToFile(msg, 1); //log the received message
+
 
                 //output the message ID (received and the current user ID)
                 System.out.println("Message that was received: "+ msg.msgId);
@@ -52,8 +55,10 @@ public class MyProcess implements Runnable{
                     System.out.println("Leader was elected.");
                     if(!msg.msgId.equals(this.msg.msgId)){ //msg id does not match current object id
                         System.out.println("You are not the leader");
+                        outputToFile(msg, 1, 3);
                     }else{ //msg ids match
                         System.out.println("You are the leader");
+                        outputToFile(msg, 1, 2);
                     }
                     forwardMessage(msg); //forward the leader message
                     break; //exit gracefully
@@ -62,12 +67,16 @@ public class MyProcess implements Runnable{
                 if(msg.msgId.equals(this.msg.msgId)){
                     System.out.println("You are the leader!");
                     this.msg.flag = 1; //set your msg id to 1
+                    outputToFile(this.msg, 1, 0); //log the received message
                     forwardMessage(this.msg); //forward your message
                 }
-                //keep facilitating the sending of messages
+                //keep facilitating the sending of messages if received id is bigger than yours
                 else if (msg.msgId.compareTo(this.msg.msgId) > 0){
                     System.out.println("You are not the leader");
+                    outputToFile(msg, 1, 1);
                     forwardMessage(msg);
+                }else {
+                    outputToFile(msg, 1, -1);
                 }
                 System.out.println("From client: "+msg.msgId);
             }
@@ -81,7 +90,7 @@ public class MyProcess implements Runnable{
 
     public void forwardMessage(Message msg){
         try{
-            outputToFile(msg, 2); //output details of forwarded message
+            outputToFile(msg, 2, -2); //output details of forwarded message
             this.clientSocket = new Socket(this.clientIP , this.clientPort); //create a client connection to next node
             this.objectOutputStream = new ObjectOutputStream(clientSocket.getOutputStream()); //create the output stream
             this.objectOutputStream.writeObject(msg); //write out the object to buffer
@@ -92,11 +101,15 @@ public class MyProcess implements Runnable{
         }
     }
 
-    public void outputToFile(Message msg, int type) throws IOException{
+    public void outputToFile(Message msg, int type, int flag) throws IOException{
         if(type == 1){ //message received
             this.writer.append("MESSAGE RECEIVED FROM "+this.lastSeenIP+"\n");
             this.writer.append("UUID: "+msg.msgId.toString()+"\n");
             this.writer.append("FLAG: "+msg.flag+"\n");
+            if (flag == 0 || flag == 2) this.writer.append(this.msg.msgId.toString()+" IS THE LEADER (you).");
+            if(flag == 3) this.writer.append(msg.msgId.toString()+" IS THE LEADER.");
+            if (flag == 1)this.writer.append(msg.msgId+" BIGGER THAN CURRENT PROCESS UUID "+this.msg.msgId);
+            if (flag == -1) this.writer.append("MESSAGE WILL NOT BE FORWARDED (YOUR UUID IS SMALLER THAN RECEIVED)");
             this.writer.append("----------------------------------------------"+"\n");
         }
         if (type == 2){ //message to send to other client
